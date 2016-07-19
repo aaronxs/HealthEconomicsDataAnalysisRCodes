@@ -1,0 +1,105 @@
+library(meta);library(R2OpenBUGS);library(forestplot)
+# numbers of events in treatment group
+rt <- c(11, 4, 1, 63, 25, 2, 3, 6, 23, 2, 6, 10, 2, 197, 16)
+# number of patients in treatment group
+nt <- c(30, 60, 50, 629, 117, 34, 35, 223, 286, 256, 71, 103, 30, 1253, 50)
+# number of events in control group
+rc <- c(7, 6, 4, 37, 37, 3, 7, 9, 27, 0, 13, 11, 2, 159, 12)
+rc1 <- rc + 0.5
+# number of patients in control group
+nc <- c(11, 60, 50, 374, 89, 29, 26, 199, 564, 280, 83, 105 ,30, 485, 50)
+N <- length(rt)
+# labels of the group
+stlab <- c("Menon(2)", "Ahlering", "Boris", "Nelson", "Wood", "Durand", "Fracalanza", "Ham", "Krambeck", "D'Alonzo", "Drouin", "Ficarra", "Ou", "Carlsson", "Nadler")
+bayes.data <- list("rt", "nt", "rc", "nc")
+# frequentist approach
+meta.model <- metabin(rt, nt, rc, nc, stlab, sm="OR")
+mean.freq <- c(NA, exp(meta.model$TE), NA, exp(meta.model$TE.fixed), exp(meta.model$TE.random), meta.model$tau)
+lower.freq <- c(NA, exp(meta.model$lower), NA, exp(meta.model$lower.fixed), exp(meta.model$lower.random), NA)
+upper.freq <- c(NA, exp(meta.model$upper), NA, exp(meta.model$upper.fixed), exp(meta.model$upper.random), NA)
+lab.freq <- cbind(c("Study", stlab, NA, "FixedEffects", "RandomEffects", "sigmaB"),
+                c("OR", round(mean.freq[2:20], 2)),
+                c("95% Lwr", round(lower.freq[2:20], 2)),
+                c("95% Upr", round(upper.freq[2:20], 2)))
+# forestplot(labeltext=lab.freq,
+#            hrzl_lines = gpar(col="#444444"),
+#            mean=round(mean.freq, 2), lower=round(lower.freq, 2), upper=round(upper.freq, 2),
+#            is.summary=c(TRUE, rep(FALSE, 15), FALSE, TRUE, TRUE), 
+#            clip=c(0.01, 15), graphwidth=unit(10, "cm"),
+#            col=fpColors(box="royalblue",line="darkblue", summary="royalblue"), 
+#            xlog=TRUE)
+
+# w(fixed), w(random) are the weights of each group in the fixed/random effect model
+# tau^2 is sigma^2_b
+# p is the cochran's test
+
+initial <- function(){
+  list(#pc=rep(runif(1, min=0, max=1), N), 
+       #pt=rep(runif(1, min=0, max=1), N), 
+       mu=rep(0, N),
+       delta=rep(0, N),
+       theta0=runif(1, -1, 1),
+       tau=runif(1, 0.001, 1))
+} 
+# parameters to keep track of
+pars <- c("OR", "theta0", "delta.new", "sigmaB")
+
+# r_c ~ binomial(n_c, p_c) number of events in control group
+# r_t ~ binomial(n_t, p_t) number of events in treatment group
+# delta is the in log odds ratio, difference in log odds between two groups
+# delta.new 
+# mu is the log odds of control group
+
+# pc[i] <- exp(mu[i])/(1 + exp(mu[i]))
+# pt[i] <- exp(mu[i] + delta[i])/(1 + exp(mu[i] + delta[i]))
+
+cat("model{
+  for(i in 1:15) {
+    rc[i] ~ dbin(pc[i], nc[i])
+    rt[i] ~ dbin(pt[i], nt[i])
+    logit(pc[i]) <- mu[i]
+    logit(pt[i]) <- mu[i] + delta[i]
+    delta[i] ~ dnorm(theta0, tau)
+    mu[i] ~ dnorm(0, 0.00001)
+    OR[i] <- exp(delta[i])
+    }
+  theta0 ~ dnorm(0, 0.000001)
+  tau ~ dgamma(0.001, 0.001)
+  sigmaB <- 1/sqrt(tau)
+  delta.new ~ dnorm(theta0, tau)
+  
+  }", file="BayesModel.txt")
+# run the mcmc in Openbugs through R:
+bayes.model <- bugs(data=bayes.data, inits=initial, parameters.to.save=pars,
+                    model.file="BayesModel.txt", n.chains=3, n.iter=110000,
+                    n.burnin=10000, n.thin=1, debug=TRUE)
+bayes.out<- bayes.model$sims.array
+bayes.sum <- bayes.model$summary
+bayes.sum <- bayes.sum[-19,-c(4:6,8:9)]
+mean.bayes <- c(NA, bayes.sum[1:15,1], NA, exp(bayes.sum[16:17, 1]), bayes.sum[18, 1])
+lower.bayes <- c(NA, bayes.sum[1:15,3], NA, exp(bayes.sum[16:17, 3]), bayes.sum[18, 3])
+upper.bayes <- c(NA, bayes.sum[1:15,4], NA, exp(bayes.sum[16:17, 4]), bayes.sum[18, 4])
+lab.bayes <- cbind(c("Study", stlab, NA, "theta0", "theta.new", "sigmaB"),
+                  c("OR", round(mean.bayes[2:20], 2)),
+                  c("95% Lwr", round(lower.bayes[2:20], 2)),
+                  c("95% Upr", round(upper.bayes[2:20], 2)))
+# forestplot(labeltext=lab.bayes,
+#            hrzl_lines = gpar(col="#444444"),
+#            mean=round(mean.bayes, 2), lower=round(lower.bayes, 2), upper=round(upper.bayes, 2),
+#            is.summary=c(TRUE, rep(FALSE, 15), FALSE, TRUE, TRUE), 
+#            clip=c(0.01, 15), graphwidth=unit(10, "cm"),
+#            col=fpColors(box="royalblue",line="darkblue", summary="royalblue"), 
+#            xlog=TRUE)
+
+# cat("model{
+#   for(i in 1 :N){
+#     thetahat[i] ~ dnorm(theta[i], tauhat[i])
+#     theta[i] ~ dnorm(theta0, tau)
+#   
+#     tauhat[i] ~ 1 /(sdhat[i]^2)
+#   }
+#   theta0 ~ dnorm(0, 0.0000001)
+#   tau ~ dgamma(0.001, 0.001)
+#   sigma <- 1/sqrt(tau)
+#   OR <- exp(theta0)
+#   }", file="BayesModelNorm.txt")
