@@ -1,5 +1,4 @@
 library(meta);library(R2OpenBUGS);library(forestplot)
-setwd("C:/Users/Aaron-/Desktop/2016 Summer Courses/CHL7001/Lecture 5")
 # numbers of events in treatment group
 rt <- c(11, 4, 1, 63, 25, 2, 3, 6, 23, 2, 6, 10, 2, 197, 16)
 # number of patients in treatment group
