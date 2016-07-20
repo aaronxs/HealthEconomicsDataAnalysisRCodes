@@ -1,1 +1,0 @@
-# This folder contains the code for conducting a meta-analysis, using the frequentist and Bayesian approach trying to determine the true log odds ratio between the chance of an event for the control and treatment group
